@@ -1,0 +1,10 @@
+[package]
+name = "fusion-engine"
+version = "0.1.0"
+authors = ["Agoston Szepessy <agszepp@gmail.com>"]
+
+[dependencies]
+gl = "0.6.1"
+libc = "0.2.17"
+glutin = "0.6.1"
+glm = "0.2.1"
