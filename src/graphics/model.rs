@@ -1,14 +1,21 @@
 extern crate glm;
-
-use graphics::vertex::Vertex;
+extern crate gl;
+use self::gl::types::*;
 
 use std::fs::File;
 use std::io::Read;
+use std::mem;
 
 pub struct Model
 {
-    vertices: Vec<Vertex>,
-    texture_id: i32
+    pub vertices: Vec<glm::Vec3>,
+    pub uv_coords: Vec<glm::Vec2>,
+    pub normals: Vec<glm::Vec3>,
+    pub vao: u32,
+    pub vertex_buffer: u32,
+    pub uv_buffer: u32,
+    pub normal_buffer: u32,
+    pub texture_id: u32
 }
 
 impl Model
@@ -25,20 +32,22 @@ impl Model
 
         file.read_to_string(&mut data).expect("Unable to read data");
 
-        Self::parse_obj(path)
+        Self::parse_obj(&data)
     }
 
     fn parse_obj(data: &str) -> Model
     {
-        let mut temp_vertices = Vec::<glm::Vec3>::new();
-        let mut temp_uv_coords = Vec::<glm::Vec2>::new();
-        let mut temp_normals = Vec::<glm::Vec3>::new();
+        let mut temp_vertices: Vec<glm::Vec3> = Vec::new();
+        let mut temp_uv_coords: Vec<glm::Vec2> = Vec::new();
+        let mut temp_normals: Vec<glm::Vec3> = Vec::new();
 
-        let mut temp_vertex_indices = Vec::<i32>::new();
-        let mut temp_uv_indices = Vec::<i32>::new();
-        let mut temp_normal_indices = Vec::<i32>::new();
+        let mut temp_vertex_indices: Vec<usize> = Vec::new();
+        let mut temp_uv_indices: Vec<usize> = Vec::new();
+        let mut temp_normal_indices: Vec<usize> = Vec::new();
 
-        let mut vertices = Vec::<Vertex>::new();
+        let mut out_vertices: Vec<glm::Vec3> = Vec::new();
+        let mut out_uvs: Vec<glm::Vec2> = Vec::new();
+        let mut out_normals: Vec<glm::Vec3> = Vec::new();
 
         for line in data.lines()
         {
@@ -95,17 +104,17 @@ impl Model
                     let second = line_data[2].split('/').collect::<Vec<&str>>();
                     let third = line_data[3].split('/').collect::<Vec<&str>>();
 
-                    temp_vertex_indices.push(first[0].parse::<i32>().expect("malformed file"));
-                    temp_vertex_indices.push(second[0].parse::<i32>().expect("malformed file"));
-                    temp_vertex_indices.push(third[0].parse::<i32>().expect("malformed file"));
+                    temp_vertex_indices.push(first[0].parse::<usize>().expect("malformed file"));
+                    temp_vertex_indices.push(second[0].parse::<usize>().expect("malformed file"));
+                    temp_vertex_indices.push(third[0].parse::<usize>().expect("malformed file"));
 
-                    temp_uv_indices.push(first[1].parse::<i32>().expect("malformed fiel"));
-                    temp_uv_indices.push(second[1].parse::<i32>().expect("malformed file"));
-                    temp_uv_indices.push(third[1].parse::<i32>().expect("malformed file"));
+                    temp_uv_indices.push(first[1].parse::<usize>().expect("malformed fiel"));
+                    temp_uv_indices.push(second[1].parse::<usize>().expect("malformed file"));
+                    temp_uv_indices.push(third[1].parse::<usize>().expect("malformed file"));
 
-                    temp_normal_indices.push(first[2].parse::<i32>().expect("malformed file"));
-                    temp_normal_indices.push(second[2].parse::<i32>().expect("malformed file"));
-                    temp_normal_indices.push(third[2].parse::<i32>().expect("malformed file"));
+                    temp_normal_indices.push(first[2].parse::<usize>().expect("malformed file"));
+                    temp_normal_indices.push(second[2].parse::<usize>().expect("malformed file"));
+                    temp_normal_indices.push(third[2].parse::<usize>().expect("malformed file"));
 
                 }
                 _ => println!("Other value {}", line_data[0])
@@ -118,17 +127,52 @@ impl Model
             let normal_index = temp_normal_indices[i];
 
             // subtract 1 because OBJ indices start at 1, but Rust array indices start at 0
-            let mesh_vertex = temp_vertices[i - 1];
-            let uv = temp_uv_coords[i - 1];
-            let normal = temp_normals[i - 1];
+            let mesh_vertex = temp_vertices[normal_index - 1];
+            let uv = temp_uv_coords[uv_index - 1];
+            let normal = temp_normals[normal_index - 1];
 
-            let vertex = Vertex::new(mesh_vertex, uv, normal);
-            vertices.push(vertex);
-
+            out_vertices.push(mesh_vertex);
+            out_uvs.push(uv);
+            out_normals.push(normal);
         }
 
+        let mut vao = 0;
+        let mut vertex_buffer = 0;
+        let mut uv_buffer = 0;
+        let mut normal_buffer = 0;
+
+        unsafe {
+            // create vertex array object
+            gl::GenVertexArrays(1, &mut vao);
+            gl::BindVertexArray(vao);
+
+            // generate vertex array buffer and copy vertex data into it
+            gl::GenBuffers(1, &mut vertex_buffer);
+            gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
+            gl::BufferData(gl::ARRAY_BUFFER, (out_vertices.len() * mem::size_of::<glm::Vec3>()) as GLsizeiptr,
+                            mem::transmute(&out_vertices[0]), gl::STATIC_DRAW);
+
+            // generate uv array buffer and copy uv data into it
+            gl::GenBuffers(1, &mut uv_buffer);
+            gl::BindBuffer(gl::ARRAY_BUFFER, uv_buffer);
+            gl::BufferData(gl::ARRAY_BUFFER, (out_uvs.len() * mem::size_of::<glm::Vec2>()) as GLsizeiptr,
+                            mem::transmute(&out_uvs[0]), gl::STATIC_DRAW);
+
+            gl::GenBuffers(1, &mut normal_buffer);
+            gl::BindBuffer(gl::ARRAY_BUFFER, normal_buffer);
+            gl::BufferData(gl::ARRAY_BUFFER, (out_normals.len() * mem::size_of::<glm::Vec3>()) as GLsizeiptr,
+                            mem::transmute(&out_normals[0]), gl::STATIC_DRAW);
+        }
+
+
         Model {
-            vertices: vertices,
+            vertices: out_vertices,
+            uv_coords: out_uvs,
+            normals: out_normals,
+            vao: vao,
+            vertex_buffer: vertex_buffer,
+            uv_buffer: uv_buffer,
+            normal_buffer: normal_buffer,
             texture_id: 1,
         }
     }
