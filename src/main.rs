@@ -14,6 +14,7 @@ fn main() {
     unsafe { window.make_current() };
 
     unsafe {
+        // TODO: fix this because it doesn't work
         gl::load_with(|symbol| window.get_proc_address(symbol) as *const _);
 
         gl::ClearColor(0.0, 1.0, 0.0, 1.0);

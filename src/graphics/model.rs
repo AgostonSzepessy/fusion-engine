@@ -16,7 +16,8 @@ pub struct Shader
     pub program: GLuint
 }
 
-impl Shader {
+impl Shader
+{
     pub fn new(vert_path: String, frag_path: String) -> Shader {
         let vertex_shader = Shader::compile_shader(vert_path.as_str(), gl::VERTEX_SHADER);
         let fragment_shader = Shader::compile_shader(frag_path.as_str(), gl::FRAGMENT_SHADER);
@@ -34,7 +35,8 @@ impl Shader {
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(e) => {
-                panic!("Error while reading shader: {}", path);
+                println!("Error while reading shader: {}", path);
+                panic!("Error is {}", e);
             }
         };
 
@@ -98,38 +100,31 @@ impl Shader {
     }
 }
 
-// TODO: refactor code
-pub struct Model
+pub struct Mesh
 {
     pub vertices: Vec<glm::Vec3>,
     pub uv_coords: Vec<glm::Vec2>,
-    pub normals: Vec<glm::Vec3>,
-    pub vao: u32,
-    pub vertex_buffer: u32,
-    pub uv_buffer: u32,
-    pub normal_buffer: u32,
-    pub texture_id: u32
+    pub normals: Vec<glm::Vec3>
 }
 
-
-impl Model
+impl Mesh
 {
-    pub fn new(path: &str) -> Model
-    {
+    pub fn new(path: &str) -> Mesh {
         let mut data = String::new();
         let mut file = match File::open(path) {
             Ok(file) => file,
             Err(e) => {
-                panic!("Error! Could not open {}", path);
+                println!("Error could not open {}", path);
+                panic!(e);
             }
         };
 
         file.read_to_string(&mut data).expect("Unable to read data");
 
-        Self::parse_obj(&data)
+        Mesh::parse_obj(&data)
     }
 
-    fn parse_obj(data: &str) -> Model
+    fn parse_obj(data: &str) -> Mesh
     {
         let mut temp_vertices: Vec<glm::Vec3> = Vec::new();
         let mut temp_uv_coords: Vec<glm::Vec2> = Vec::new();
@@ -153,11 +148,7 @@ impl Model
                     let mut verts = vec![0.0; 3];
 
                     for i in 1..3 {
-                        let val = match line_data[i].parse::<f32>() {
-                            Ok(n) => n,
-                            Err(e) => panic!("Unable to read vertex")
-                        };
-
+                        let val = line_data[i].parse::<f32>().expect("Unable to read vertex");
                         verts[i - 1] = val;
                     }
                     temp_vertices.push(glm::Vec3::new(verts[0], verts[1], verts[2]));
@@ -167,11 +158,7 @@ impl Model
                     let mut uvs = vec![0.0; 2];
 
                     for i in 1..2 {
-                        let val = match line_data[i].parse::<f32>() {
-                            Ok(n) => n,
-                            Err(e) => panic!("Unable to read uv coordinate")
-                        };
-
+                        let val = line_data[i].parse::<f32>().expect("Unable to read uv coordinate");
                         uvs[i - 1] = val;
                     }
 
@@ -182,11 +169,7 @@ impl Model
                     let mut norms = vec![0.0; 3];
 
                     for i in 1..3 {
-                        let val = match line_data[i].parse::<f32>() {
-                            Ok(n) => n,
-                            Err(e) => panic!("Unable to read normal")
-                        };
-
+                        let val = line_data[i].parse::<f32>().expect("Unable to read normal");
                         norms[i - 1] = val;
                     }
 
@@ -230,6 +213,40 @@ impl Model
             out_normals.push(normal);
         }
 
+        Mesh {
+            vertices: out_vertices,
+            uv_coords: out_uvs,
+            normals: out_normals
+        }
+    }
+}
+
+pub struct Model
+{
+    pub mesh: Mesh,
+    pub vao: u32,
+    pub vertex_buffer: u32,
+    pub uv_buffer: u32,
+    pub normal_buffer: u32,
+    pub texture_id: u32
+}
+
+impl Model
+{
+    pub fn new(path: &str) -> Model
+    {
+        let mut data = String::new();
+        let mut file = match File::open(path) {
+            Ok(file) => file,
+            Err(e) => {
+                panic!("Error! Could not open {} Description: {}", path, e);
+            }
+        };
+
+        file.read_to_string(&mut data).expect("Unable to read data");
+
+        let mesh = Mesh::new(path);
+
         let mut vao = 0;
         let mut vertex_buffer = 0;
         let mut uv_buffer = 0;
@@ -243,26 +260,23 @@ impl Model
             // generate vertex array buffer and copy vertex data into it
             gl::GenBuffers(1, &mut vertex_buffer);
             gl::BindBuffer(gl::ARRAY_BUFFER, vertex_buffer);
-            gl::BufferData(gl::ARRAY_BUFFER, (out_vertices.len() * mem::size_of::<glm::Vec3>()) as GLsizeiptr,
-                            mem::transmute(&out_vertices[0]), gl::STATIC_DRAW);
+            gl::BufferData(gl::ARRAY_BUFFER, (mesh.vertices.len() * mem::size_of::<glm::Vec3>()) as GLsizeiptr,
+                            mem::transmute(&mesh.vertices[0]), gl::STATIC_DRAW);
 
             // generate uv array buffer and copy uv data into it
             gl::GenBuffers(1, &mut uv_buffer);
             gl::BindBuffer(gl::ARRAY_BUFFER, uv_buffer);
-            gl::BufferData(gl::ARRAY_BUFFER, (out_uvs.len() * mem::size_of::<glm::Vec2>()) as GLsizeiptr,
-                            mem::transmute(&out_uvs[0]), gl::STATIC_DRAW);
+            gl::BufferData(gl::ARRAY_BUFFER, (mesh.uv_coords.len() * mem::size_of::<glm::Vec2>()) as GLsizeiptr,
+                            mem::transmute(&mesh.uv_coords[0]), gl::STATIC_DRAW);
 
             gl::GenBuffers(1, &mut normal_buffer);
             gl::BindBuffer(gl::ARRAY_BUFFER, normal_buffer);
-            gl::BufferData(gl::ARRAY_BUFFER, (out_normals.len() * mem::size_of::<glm::Vec3>()) as GLsizeiptr,
-                            mem::transmute(&out_normals[0]), gl::STATIC_DRAW);
+            gl::BufferData(gl::ARRAY_BUFFER, (mesh.normals.len() * mem::size_of::<glm::Vec3>()) as GLsizeiptr,
+                            mem::transmute(&mesh.normals[0]), gl::STATIC_DRAW);
         }
 
-
         Model {
-            vertices: out_vertices,
-            uv_coords: out_uvs,
-            normals: out_normals,
+            mesh: mesh,
             vao: vao,
             vertex_buffer: vertex_buffer,
             uv_buffer: uv_buffer,
