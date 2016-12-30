@@ -4,10 +4,63 @@ extern crate gl;
 use self::gl::types::*;
 use std::fs::File;
 use std::io::Read;
+use std::io;
+use std::fmt;
+use std::error;
 use std::mem;
 use std::ffi::CString;
 use std::ptr;
 use std::str;
+
+#[derive(Debug)]
+pub enum ShaderError {
+    IoError(io::Error),
+    CompilationError(String),
+    LinkError(String),
+    InfoLogError(str::Utf8Error)
+}
+
+impl fmt::Display for ShaderError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match *self {
+            ShaderError::IoError(ref error) => write!(f, "IO Error: {}", error),
+            ShaderError::CompilationError(ref error) => write!(f, "Shader compilation error: {}", error),
+            ShaderError::LinkError(ref error) => write!(f, "Linking error: {}", error),
+            ShaderError::InfoLogError(ref error) => write!(f, "InfoLog Error: {}", error),
+        }
+    }
+}
+
+impl error::Error for ShaderError {
+    fn description(&self) -> &str {
+        match *self {
+            ShaderError::IoError(ref err) => err.description(),
+            ShaderError::CompilationError(..) => "Error during shader compilation",
+            ShaderError::LinkError(..) => "Error during linking",
+            ShaderError::InfoLogError(ref err) => err.description(),
+        }
+    }
+
+    fn cause(&self) -> Option<&error::Error> {
+        match *self {
+            ShaderError::IoError(ref error) => Some(error),
+            ShaderError::InfoLogError(ref error) => Some(error),
+            _ => None
+        }
+    }
+}
+
+impl From<io::Error> for ShaderError {
+    fn from(err: io::Error) -> ShaderError {
+        ShaderError::IoError(err)
+    }
+}
+
+impl From<str::Utf8Error> for ShaderError {
+    fn from(err: str::Utf8Error) -> ShaderError {
+        ShaderError::InfoLogError(err)
+    }
+}
 
 pub struct Shader
 {
@@ -18,29 +71,23 @@ pub struct Shader
 
 impl Shader
 {
-    pub fn new(vert_path: String, frag_path: String) -> Shader {
-        let vertex_shader = Shader::compile_shader(vert_path.as_str(), gl::VERTEX_SHADER);
-        let fragment_shader = Shader::compile_shader(frag_path.as_str(), gl::FRAGMENT_SHADER);
-        let program = Shader::link_program(vertex_shader, fragment_shader);
+    pub fn new(vert_path: String, frag_path: String) -> Result<Shader, ShaderError> {
+        let vertex_shader = try!(Shader::compile_shader(vert_path.as_str(), gl::VERTEX_SHADER));
+        let fragment_shader = try!(Shader::compile_shader(frag_path.as_str(), gl::FRAGMENT_SHADER));
+        let program = try!(Shader::link_program(vertex_shader, fragment_shader));
 
-        Shader {
+        Ok(Shader {
             vertex_path: vert_path,
             fragment_path: frag_path,
             program: program
-        }
+        })
     }
 
-    fn compile_shader(path: &str, shader_type: GLenum) -> GLuint {
+    fn compile_shader(path: &str, shader_type: GLenum) -> Result<GLuint, ShaderError> {
         let mut shader_data = String::new();
-        let mut file = match File::open(path) {
-            Ok(file) => file,
-            Err(e) => {
-                println!("Error while reading shader: {}", path);
-                panic!("Error is {}", e);
-            }
-        };
+        let mut file = try!(File::open(path));
 
-        file.read_to_string(&mut shader_data).expect("Unable to read shader data from shader");
+        try!(file.read_to_string(&mut shader_data));
 
         let shader;
 
@@ -61,13 +108,17 @@ impl Shader
                 let mut buf = Vec::with_capacity(len as usize);
                 buf.set_len((len as usize) - 1); // subtract 1 to skip the trailing null character
                 gl::GetShaderInfoLog(shader, len, ptr::null_mut(), buf.as_mut_ptr() as *mut GLchar);
-                panic!("{}", str::from_utf8(&buf).ok().expect("ShaderInfoLog not valid utf8"));
+
+                return match str::from_utf8(&buf) {
+                    Ok(msg) => Err(ShaderError::CompilationError(msg.to_string())),
+                    Err(err) => Err(ShaderError::InfoLogError(err))
+                }
             }
         }
-        shader
+        Ok(shader)
     }
 
-    fn link_program(vertex_shader: GLuint, fragment_shader: GLuint) -> GLuint{
+    fn link_program(vertex_shader: GLuint, fragment_shader: GLuint) -> Result<GLuint, ShaderError> {
         unsafe {
             let program = gl::CreateProgram();
             gl::AttachShader(program, vertex_shader);
@@ -86,10 +137,14 @@ impl Shader
                 let mut buf = Vec::with_capacity(len as usize);
                 buf.set_len((len as usize) - 1); // subtract 1 to skip the trailing null character
                 gl::GetProgramInfoLog(program, len, ptr::null_mut(), buf.as_mut_ptr() as *mut GLchar);
-                panic!("{}", str::from_utf8(&buf).ok().expect("ProgramInfoLog not valid utf8"));
+
+                return match str::from_utf8(&buf) {
+                    Ok(msg) => Err(ShaderError::LinkError(msg.to_string())),
+                    Err(err) => Err(ShaderError::InfoLogError(err))
+                }
             }
 
-            program
+            Ok(program)
         }
     }
 
