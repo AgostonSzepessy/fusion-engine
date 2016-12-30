@@ -7,6 +7,7 @@ use std::io::Read;
 use std::mem;
 use std::str;
 use graphics::shader;
+use graphics::texture::Texture;
 
 pub struct Mesh
 {
@@ -139,10 +140,18 @@ pub struct Model
     pub texture_id: u32
 }
 
-impl Model
+pub struct ModelBuilder
 {
-    pub fn new(path: &str) -> Model
-    {
+    pub mesh: Mesh,
+    pub vao: u32,
+    pub vertex_buffer: u32,
+    pub uv_buffer: u32,
+    pub normal_buffer: u32,
+    pub texture_id: u32
+}
+
+impl ModelBuilder {
+    pub fn new(path: &str) -> ModelBuilder {
         let mut data = String::new();
         let mut file = match File::open(path) {
             Ok(file) => file,
@@ -183,13 +192,29 @@ impl Model
                             mem::transmute(&mesh.normals[0]), gl::STATIC_DRAW);
         }
 
-        Model {
+        ModelBuilder {
             mesh: mesh,
             vao: vao,
             vertex_buffer: vertex_buffer,
             uv_buffer: uv_buffer,
             normal_buffer: normal_buffer,
             texture_id: 1,
+        }
+    }
+
+    pub fn set_texture(mut self, texture: Texture) -> ModelBuilder {
+        self.texture_id = texture.texture_id;
+        self
+    }
+
+    pub fn finalize(self) -> Model {
+        Model {
+            mesh: self.mesh,
+            vao: self.vao,
+            vertex_buffer: self.vertex_buffer,
+            uv_buffer: self.uv_buffer,
+            normal_buffer: self.normal_buffer,
+            texture_id: self.texture_id,
         }
     }
 }
